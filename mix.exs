@@ -1,9 +1,9 @@
-defmodule Igrep.MixProject do
+defmodule Instantgrep.MixProject do
   use Mix.Project
 
   def project do
     [
-      app: :igrep,
+      app: :instantgrep,
       version: "0.1.0",
       elixir: "~> 1.16",
       start_permanent: Mix.env() == :prod,
@@ -21,7 +21,7 @@ defmodule Igrep.MixProject do
   end
 
   defp escript do
-    [main_module: Igrep.CLI]
+    [main_module: Instantgrep.CLI]
   end
 
   defp deps do

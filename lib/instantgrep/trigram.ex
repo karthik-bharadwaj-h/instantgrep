@@ -1,4 +1,4 @@
-defmodule Igrep.Trigram do
+defmodule Instantgrep.Trigram do
   @moduledoc """
   Trigram extraction from binaries with optional probabilistic masks.
 
@@ -18,7 +18,7 @@ defmodule Igrep.Trigram do
 
   ## Examples
 
-      iex> Igrep.Trigram.extract("hello")
+      iex> Instantgrep.Trigram.extract("hello")
       MapSet.new(["hel", "ell", "llo"])
 
   """

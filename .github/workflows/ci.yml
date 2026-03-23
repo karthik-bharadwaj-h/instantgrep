@@ -57,5 +57,5 @@ jobs:
       - name: Upload escript
         uses: actions/upload-artifact@v4
         with:
-          name: igrep-${{ matrix.os }}
-          path: igrep
+          name: instantgrep-${{ matrix.os }}
+          path: instantgrep

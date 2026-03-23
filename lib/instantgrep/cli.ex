@@ -1,9 +1,9 @@
-defmodule Igrep.CLI do
+defmodule Instantgrep.CLI do
   @moduledoc """
-  Main CLI entry point for the igrep escript.
+  Main CLI entry point for the instantgrep escript.
 
   Usage:
-      igrep [OPTIONS] PATTERN [PATH]
+      instantgrep [OPTIONS] PATTERN [PATH]
 
   Options:
       --build          Build/rebuild index only (no search)
@@ -13,13 +13,13 @@ defmodule Igrep.CLI do
       -h, --help       Show this help message
 
   Examples:
-      igrep "defmodule" lib/
-      igrep --build .
-      igrep -i "todo|fixme" src/
-      igrep --no-index "pattern" .
+      instantgrep "defmodule" lib/
+      instantgrep --build .
+      instantgrep -i "todo|fixme" src/
+      instantgrep --no-index "pattern" .
   """
 
-  alias Igrep.{Index, Matcher, Query}
+  alias Instantgrep.{Index, Matcher, Query}
 
   @doc false
   @spec main([String.t()]) :: :ok
@@ -66,18 +66,18 @@ defmodule Igrep.CLI do
     index = Index.build(path)
     Index.save(index, path)
     Index.stats(index)
-    IO.puts("Index saved to #{Path.join(path, ".igrep")}/")
+    IO.puts("Index saved to #{Path.join(path, ".instantgrep")}/")
   end
 
   defp execute(%{stats: true, path: path}) do
     case Index.load(path) do
       {:ok, index} -> Index.stats(index)
-      {:error, :not_found} -> IO.puts(:stderr, "No index found. Run: igrep --build #{path}")
+      {:error, :not_found} -> IO.puts(:stderr, "No index found. Run: instantgrep --build #{path}")
     end
   end
 
   defp execute(%{pattern: nil}) do
-    IO.puts(:stderr, "Error: no pattern specified. Run: igrep --help")
+    IO.puts(:stderr, "Error: no pattern specified. Run: instantgrep --help")
     System.halt(1)
   end
 

@@ -1,9 +1,9 @@
-defmodule Igrep.IndexTest do
+defmodule Instantgrep.IndexTest do
   use ExUnit.Case
 
-  alias Igrep.Index
+  alias Instantgrep.Index
 
-  @test_dir "/tmp/igrep_test_#{:erlang.unique_integer([:positive])}"
+  @test_dir "/tmp/instantgrep_test_#{:erlang.unique_integer([:positive])}"
 
   setup do
     File.mkdir_p!(@test_dir)

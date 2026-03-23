@@ -1,4 +1,4 @@
-defmodule Igrep.Matcher do
+defmodule Instantgrep.Matcher do
   @moduledoc """
   Parallel regex matching on candidate files.
 
@@ -43,7 +43,7 @@ defmodule Igrep.Matcher do
   def brute_force(path, regex) do
     files =
       path
-      |> Igrep.Scanner.scan()
+      |> Instantgrep.Scanner.scan()
       |> Enum.map(fn {_id, file_path} -> file_path end)
 
     match_files(files, regex)

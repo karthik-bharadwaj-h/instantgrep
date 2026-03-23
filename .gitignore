@@ -1,12 +1,12 @@
 # Build artifacts
 /_build/
 /deps/
-/igrep
+/instantgrep
 *.beam
 *.ez
 
 # Index data
-.igrep/
+.instantgrep/
 
 # IDE
 .elixir_ls/

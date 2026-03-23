@@ -1,4 +1,4 @@
-defmodule Igrep.Scanner do
+defmodule Instantgrep.Scanner do
   @moduledoc """
   Recursive file scanner with ignore-pattern support.
 
@@ -12,7 +12,7 @@ defmodule Igrep.Scanner do
     ~r{/node_modules(/|$)},
     ~r{/_build(/|$)},
     ~r{/deps(/|$)},
-    ~r{/\.igrep(/|$)},
+    ~r{/\.instantgrep(/|$)},
     ~r{/\.elixir_ls(/|$)},
     ~r{/\.idea(/|$)},
     ~r{/\.vscode(/|$)},

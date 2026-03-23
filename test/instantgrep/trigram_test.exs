@@ -1,8 +1,8 @@
-defmodule Igrep.TrigramTest do
+defmodule Instantgrep.TrigramTest do
   use ExUnit.Case, async: true
-  doctest Igrep.Trigram
+  doctest Instantgrep.Trigram
 
-  alias Igrep.Trigram
+  alias Instantgrep.Trigram
 
   describe "extract/1" do
     test "extracts overlapping trigrams from a string" do

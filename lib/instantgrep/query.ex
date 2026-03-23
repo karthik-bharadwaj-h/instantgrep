@@ -1,4 +1,4 @@
-defmodule Igrep.Query do
+defmodule Instantgrep.Query do
   @moduledoc """
   Decomposes regex patterns into trigram query trees for index lookup.
 
@@ -13,7 +13,7 @@ defmodule Igrep.Query do
   - `:none` — no trigrams extractable, must scan all files
   """
 
-  alias Igrep.Trigram
+  alias Instantgrep.Trigram
 
   @type query_tree :: {:all, [binary()]} | {:any, [query_tree()]} | :none
 
@@ -22,13 +22,13 @@ defmodule Igrep.Query do
 
   ## Examples
 
-      iex> Igrep.Query.decompose("hello")
+      iex> Instantgrep.Query.decompose("hello")
       {:all, ["hel", "ell", "llo"]}
 
-      iex> Igrep.Query.decompose("cat|dog")
+      iex> Instantgrep.Query.decompose("cat|dog")
       {:any, [{:all, ["cat"]}, {:all, ["dog"]}]}
 
-      iex> Igrep.Query.decompose(".*")
+      iex> Instantgrep.Query.decompose(".*")
       :none
 
   """

@@ -1,13 +1,13 @@
-defmodule Igrep.Index do
+defmodule Instantgrep.Index do
   @moduledoc """
   ETS-backed trigram inverted index with disk persistence.
 
   Builds a trigram index from a set of files using parallel workers.
   Each trigram maps to a list of `{file_id, next_mask, loc_mask}` postings.
-  The index can be saved to and loaded from a `.igrep/` directory.
+  The index can be saved to and loaded from a `.instantgrep/` directory.
   """
 
-  alias Igrep.{Scanner, Trigram}
+  alias Instantgrep.{Scanner, Trigram}
 
   @type t :: %__MODULE__{
           postings_table: :ets.tid(),
@@ -19,7 +19,7 @@ defmodule Igrep.Index do
 
   defstruct [:postings_table, :files_table, :file_count, :trigram_count, :build_time_us]
 
-  @index_dir ".igrep"
+  @index_dir ".instantgrep"
   @postings_file "postings.dat"
   @files_file "files.dat"
 
@@ -35,8 +35,8 @@ defmodule Igrep.Index do
 
     files = Scanner.scan(path, opts)
 
-    postings_table = :ets.new(:igrep_postings, [:set, :public, read_concurrency: true])
-    files_table = :ets.new(:igrep_files, [:set, :public, read_concurrency: true])
+    postings_table = :ets.new(:instantgrep_postings, [:set, :public, read_concurrency: true])
+    files_table = :ets.new(:instantgrep_files, [:set, :public, read_concurrency: true])
 
     # Store file mappings
     Enum.each(files, fn {file_id, file_path} ->
@@ -170,8 +170,8 @@ defmodule Igrep.Index do
       files_data =
         files_path |> File.read!() |> :erlang.binary_to_term()
 
-      postings_table = :ets.new(:igrep_postings, [:set, :public, read_concurrency: true])
-      files_table = :ets.new(:igrep_files, [:set, :public, read_concurrency: true])
+      postings_table = :ets.new(:instantgrep_postings, [:set, :public, read_concurrency: true])
+      files_table = :ets.new(:instantgrep_files, [:set, :public, read_concurrency: true])
 
       :ets.insert(postings_table, postings_data)
       :ets.insert(files_table, files_data)

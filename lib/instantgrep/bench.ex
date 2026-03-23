@@ -1,9 +1,9 @@
-defmodule Igrep.Bench do
+defmodule Instantgrep.Bench do
   @moduledoc """
-  Benchmark CLI tool comparing igrep vs grep vs ripgrep.
+  Benchmark CLI tool comparing instantgrep vs grep vs ripgrep.
 
   Usage:
-      igrep-bench [OPTIONS] PATH
+      instantgrep-bench [OPTIONS] PATH
 
   Options:
       --patterns FILE    File with one pattern per line (default: built-in)
@@ -12,12 +12,12 @@ defmodule Igrep.Bench do
       -h, --help         Show this help message
 
   Compares wall-clock execution time of:
-  - igrep (trigram-indexed search)
+  - instantgrep (trigram-indexed search)
   - grep -rn (standard grep)
   - rg --no-heading (ripgrep)
   """
 
-  alias Igrep.{Index, Matcher, Query}
+  alias Instantgrep.{Index, Matcher, Query}
 
   @default_patterns [
     "defmodule",
@@ -68,7 +68,7 @@ defmodule Igrep.Bench do
     patterns = load_patterns(args.patterns_file)
 
     IO.puts("=" |> String.duplicate(80))
-    IO.puts("igrep Benchmark")
+    IO.puts("instantgrep Benchmark")
     IO.puts("=" |> String.duplicate(80))
     IO.puts("Path:       #{path}")
     IO.puts("Patterns:   #{length(patterns)}")
@@ -76,8 +76,8 @@ defmodule Igrep.Bench do
     IO.puts("Warmup:     #{args.warmup}")
     IO.puts("")
 
-    # Build igrep index
-    IO.puts("Building igrep index...")
+    # Build instantgrep index
+    IO.puts("Building instantgrep index...")
     index = Index.build(path)
     Index.stats(index)
     IO.puts("")
@@ -91,7 +91,7 @@ defmodule Igrep.Bench do
       Enum.map(patterns, fn pattern ->
         IO.write("Benchmarking: #{pattern} ... ")
 
-        igrep_times = bench_igrep(pattern, path, index, args.warmup, args.iterations)
+        instantgrep_times = bench_instantgrep(pattern, path, index, args.warmup, args.iterations)
 
         grep_times =
           if has_grep, do: bench_grep(pattern, path, args.warmup, args.iterations), else: []
@@ -102,7 +102,7 @@ defmodule Igrep.Bench do
 
         %{
           pattern: pattern,
-          igrep: igrep_times,
+          instantgrep: instantgrep_times,
           grep: grep_times,
           rg: rg_times
         }
@@ -115,7 +115,7 @@ defmodule Igrep.Bench do
 
   # --- Benchmark Runners ---
 
-  defp bench_igrep(pattern, _path, index, warmup, iterations) do
+  defp bench_instantgrep(pattern, _path, index, warmup, iterations) do
     regex = Regex.compile!(pattern)
     query_tree = Query.decompose(pattern)
 
@@ -167,7 +167,7 @@ defmodule Igrep.Bench do
   # --- Results ---
 
   defp print_results(results, has_grep, has_rg) do
-    header_parts = ["Pattern", "igrep (median)"]
+    header_parts = ["Pattern", "instantgrep (median)"]
 
     header_parts =
       if has_grep, do: header_parts ++ ["grep (median)", "vs grep"], else: header_parts
@@ -182,17 +182,17 @@ defmodule Igrep.Bench do
 
     # Rows
     Enum.each(results, fn result ->
-      igrep_median = median(result.igrep)
+      instantgrep_median = median(result.instantgrep)
 
       row = [
         truncate(result.pattern, 28),
-        format_time(igrep_median)
+        format_time(instantgrep_median)
       ]
 
       row =
         if has_grep do
           grep_median = median(result.grep)
-          speedup = if igrep_median > 0, do: Float.round(grep_median / igrep_median, 1), else: 0.0
+          speedup = if instantgrep_median > 0, do: Float.round(grep_median / instantgrep_median, 1), else: 0.0
           row ++ [format_time(grep_median), "#{speedup}x"]
         else
           row
@@ -201,7 +201,7 @@ defmodule Igrep.Bench do
       row =
         if has_rg do
           rg_median = median(result.rg)
-          speedup = if igrep_median > 0, do: Float.round(rg_median / igrep_median, 1), else: 0.0
+          speedup = if instantgrep_median > 0, do: Float.round(rg_median / instantgrep_median, 1), else: 0.0
           row ++ [format_time(rg_median), "#{speedup}x"]
         else
           row
@@ -211,7 +211,7 @@ defmodule Igrep.Bench do
     end)
 
     IO.puts("")
-    IO.puts("Note: speedup > 1.0 means igrep is faster")
+    IO.puts("Note: speedup > 1.0 means instantgrep is faster")
   end
 
   defp format_row(cols, widths) do

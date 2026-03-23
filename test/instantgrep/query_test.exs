@@ -1,7 +1,7 @@
-defmodule Igrep.QueryTest do
+defmodule Instantgrep.QueryTest do
   use ExUnit.Case, async: true
 
-  alias Igrep.Query
+  alias Instantgrep.Query
 
   describe "decompose/1" do
     test "literal string produces AND of trigrams" do

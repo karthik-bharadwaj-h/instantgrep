@@ -1,4 +1,4 @@
-# igrep
+# instantgrep
 
 Fast regex search using trigram indexes. Based on [Cursor's research](https://cursor.com/blog/fast-regex-search).
 
@@ -7,8 +7,8 @@ Builds a trigram inverted index over your codebase and uses it to skip files tha
 ## Install
 
 ```bash
-brew tap GrowlyX/igrep
-brew install igrep
+brew tap GrowlyX/instantgrep
+brew install instantgrep
 ```
 
 Or build from source:
@@ -20,17 +20,17 @@ mix deps.get && mix escript.build
 ## Usage
 
 ```bash
-igrep "pattern" path/          # search (builds index on first run)
-igrep --build .                # build/rebuild index
-igrep -i "todo|fixme" src/     # case-insensitive
-igrep --no-index "pattern" .   # brute-force mode (no index)
+instantgrep "pattern" path/          # search (builds index on first run)
+instantgrep --build .                # build/rebuild index
+instantgrep -i "todo|fixme" src/     # case-insensitive
+instantgrep --no-index "pattern" .   # brute-force mode (no index)
 ```
 
 ## Benchmark
 
 ```bash
-./igrep-bench lib/
-./igrep-bench --patterns patterns.txt --iterations 10 /path/to/project
+./instantgrep-bench lib/
+./instantgrep-bench --patterns patterns.txt --iterations 10 /path/to/project
 ```
 
 ## How it works

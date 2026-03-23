@@ -1,6 +1,0 @@
-#!/bin/bash
-# Run igrep-bench using the compiled Mix project
-# Usage: ./igrep-bench [OPTIONS] PATH
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-cd "$SCRIPT_DIR"
-exec elixir --erl "-noinput" -S mix run -e "Igrep.Bench.main(System.argv())" -- "$@"

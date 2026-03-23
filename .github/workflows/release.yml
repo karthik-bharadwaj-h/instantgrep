@@ -15,9 +15,9 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
-            asset_name: igrep-linux-amd64
+            asset_name: instantgrep-linux-amd64
           - os: macos-latest
-            asset_name: igrep-darwin-arm64
+            asset_name: instantgrep-darwin-arm64
     steps:
       - uses: actions/checkout@v4
 
@@ -32,7 +32,7 @@ jobs:
 
       - name: Package
         run: |
-          tar czf ${{ matrix.asset_name }}.tar.gz igrep igrep-bench README.md LICENSE
+          tar czf ${{ matrix.asset_name }}.tar.gz instantgrep instantgrep-bench README.md LICENSE
           shasum -a 256 ${{ matrix.asset_name }}.tar.gz > ${{ matrix.asset_name }}.tar.gz.sha256
 
       - name: Upload to Release
@@ -58,8 +58,8 @@ jobs:
       - name: Download checksums
         run: |
           sleep 10  # wait for release assets to be available
-          curl -sL "https://github.com/${{ github.repository }}/releases/download/v${{ steps.version.outputs.version }}/igrep-darwin-arm64.tar.gz.sha256" -o darwin.sha256
-          curl -sL "https://github.com/${{ github.repository }}/releases/download/v${{ steps.version.outputs.version }}/igrep-linux-amd64.tar.gz.sha256" -o linux.sha256
+          curl -sL "https://github.com/${{ github.repository }}/releases/download/v${{ steps.version.outputs.version }}/instantgrep-darwin-arm64.tar.gz.sha256" -o darwin.sha256
+          curl -sL "https://github.com/${{ github.repository }}/releases/download/v${{ steps.version.outputs.version }}/instantgrep-linux-amd64.tar.gz.sha256" -o linux.sha256
 
       - name: Update formula
         run: |
@@ -68,8 +68,8 @@ jobs:
           LINUX_SHA=$(cut -d ' ' -f1 linux.sha256)
           REPO="${{ github.repository }}"
 
-          cat > Formula/igrep.rb << EOF
-          class Igrep < Formula
+          cat > Formula/instantgrep.rb << EOF
+          class Instantgrep < Formula
             desc "Fast regex search using trigram indexes"
             homepage "https://github.com/${REPO}"
             version "${VERSION}"
@@ -77,14 +77,14 @@ jobs:
 
             on_macos do
               on_arm do
-                url "https://github.com/${REPO}/releases/download/v${VERSION}/igrep-darwin-arm64.tar.gz"
+                url "https://github.com/${REPO}/releases/download/v${VERSION}/instantgrep-darwin-arm64.tar.gz"
                 sha256 "${DARWIN_SHA}"
               end
             end
 
             on_linux do
               on_intel do
-                url "https://github.com/${REPO}/releases/download/v${VERSION}/igrep-linux-amd64.tar.gz"
+                url "https://github.com/${REPO}/releases/download/v${VERSION}/instantgrep-linux-amd64.tar.gz"
                 sha256 "${LINUX_SHA}"
               end
             end
@@ -92,12 +92,12 @@ jobs:
             depends_on "erlang"
 
             def install
-              bin.install "igrep"
-              bin.install "igrep-bench"
+              bin.install "instantgrep"
+              bin.install "instantgrep-bench"
             end
 
             test do
-              assert_match "igrep", shell_output("#{bin}/igrep --help")
+              assert_match "instantgrep", shell_output("#{bin}/instantgrep --help")
             end
           end
           EOF
@@ -106,6 +106,6 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add Formula/igrep.rb
+          git add Formula/instantgrep.rb
           git commit -m "Update formula to v${{ steps.version.outputs.version }}"
           git push
