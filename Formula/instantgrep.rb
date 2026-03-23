@@ -18,6 +18,13 @@ class Instantgrep < Formula
     end
   end
 
+  on_system :windows do
+    on_intel do
+      url "https://github.com/GrowlyX/instantgrep/releases/download/v0.0.2/instantgrep-windows-amd64.tar.gz"
+      sha256 "Not"
+    end
+  end
+
   depends_on "erlang"
 
   def install
