@@ -18,6 +18,8 @@ jobs:
             asset_name: instantgrep-linux-amd64
           - os: macos-latest
             asset_name: instantgrep-darwin-arm64
+          - os: windows-latest
+            asset_name: instantgrep-windows-amd64
     steps:
       - uses: actions/checkout@v4
 
@@ -30,10 +32,18 @@ jobs:
       - run: mix test
       - run: mix escript.build
 
-      - name: Package
+      - name: Package (unix)
+        if: runner.os != 'Windows'
         run: |
           tar czf ${{ matrix.asset_name }}.tar.gz instantgrep instantgrep-bench README.md LICENSE
           shasum -a 256 ${{ matrix.asset_name }}.tar.gz > ${{ matrix.asset_name }}.tar.gz.sha256
+
+      - name: Package (windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          tar czf ${{ matrix.asset_name }}.tar.gz instantgrep instantgrep-bench README.md LICENSE
+          sha256sum ${{ matrix.asset_name }}.tar.gz > ${{ matrix.asset_name }}.tar.gz.sha256
 
       - name: Upload to Release
         uses: softprops/action-gh-release@v2
