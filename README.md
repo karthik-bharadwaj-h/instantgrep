@@ -19,10 +19,12 @@ mix deps.get && mix escript.build
 
 ## Usage
 
+Also available as `igrep` and `instantgrep`.
+
 ```bash
-instantgrep "pattern" path/          # search (builds index on first run)
-instantgrep --build .                # build/rebuild index
-instantgrep -i "todo|fixme" src/     # case-insensitive
+ig "pattern" path/                   # search (builds index on first run)
+ig --build .                         # build/rebuild index
+ig -i "todo|fixme" src/              # case-insensitive
 instantgrep --no-index "pattern" .   # brute-force mode (no index)
 ```
 
@@ -34,6 +36,7 @@ instantgrep --no-index "pattern" .   # brute-force mode (no index)
 ```
 
 ## How it works
+
 [Cursor's research](https://cursor.com/blog/fast-regex-search)
 
 1. **Index** — Extracts all overlapping 3-byte trigrams from every file, stores in an inverted index with bloom-filter masks
