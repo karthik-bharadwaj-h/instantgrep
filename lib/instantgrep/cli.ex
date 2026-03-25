@@ -7,6 +7,7 @@ defmodule Instantgrep.CLI do
 
   Options:
       --build          Build/rebuild index only (no search)
+      --update         Update index (reindex only changed/new/deleted files)
       --daemon         Start persistent search daemon (loads index once, serves forever)
       --stop           Stop a running daemon
       --no-index       Skip index, brute-force scan (like grep)
@@ -17,6 +18,7 @@ defmodule Instantgrep.CLI do
 
   Examples:
       instantgrep --build .                # build index
+      instantgrep --update .               # incremental update (changed files only)
       instantgrep --daemon .               # start daemon (background with: & or systemd)
       instantgrep "pattern" .              # search (uses daemon if running, else direct)
       instantgrep --stop .                 # stop running daemon
@@ -42,6 +44,7 @@ defmodule Instantgrep.CLI do
       OptionParser.parse(args,
         strict: [
           build: :boolean,
+          update: :boolean,
           daemon: :boolean,
           stop: :boolean,
           no_index: :boolean,
@@ -54,14 +57,15 @@ defmodule Instantgrep.CLI do
       )
 
     build  = Keyword.get(opts, :build,  false)
+    update = Keyword.get(opts, :update, false)
     daemon = Keyword.get(opts, :daemon, false)
     stop   = Keyword.get(opts, :stop,   false)
     stats  = Keyword.get(opts, :stats,  false)
 
-    # For --build / --stats / --daemon / --stop, positional[0] is the directory.
+    # For --build / --update / --stats / --daemon / --stop, positional[0] is the directory.
     # For search, positional[0] is the pattern and positional[1] is the path.
     {pattern, path} =
-      if build or stats or daemon or stop do
+      if build or update or stats or daemon or stop do
         {nil, Enum.at(positional, 0, ".")}
       else
         {Enum.at(positional, 0), Enum.at(positional, 1, ".")}
@@ -69,6 +73,7 @@ defmodule Instantgrep.CLI do
 
     %{
       build: build,
+      update: update,
       daemon: daemon,
       stop: stop,
       no_index: Keyword.get(opts, :no_index, false),
@@ -104,6 +109,12 @@ defmodule Instantgrep.CLI do
     Index.save(index, path)
     Index.stats(index)
     IO.puts("Index saved to #{Path.join(path, ".instantgrep")}/")
+  end
+
+  defp execute(%{update: true, path: path}) do
+    IO.puts("Updating index for #{path}...")
+    {:ok, index} = Index.update(path)
+    Index.stats(index)
   end
 
   defp execute(%{stats: true, path: path}) do
