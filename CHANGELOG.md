@@ -158,3 +158,97 @@ Indexes built with an older format version are automatically detected and rebuil
 | `lib/instantgrep/bench.ex` | Uses `evaluate_masked` + `lookup_with_masks` |
 | `lib/instantgrep/daemon.ex` | **New** — Unix socket daemon with content cache and fast-path matching |
 | `ig.py` | **New** — Python thin client (zero BEAM startup overhead) |
+
+---
+
+## Performance & Correctness — Round 2
+
+All changes below are relative to commit `2cfbc7d` (*Add --update option for incremental index updates*).
+
+---
+
+### 7. C NIF for Trigram Extraction — −26% CPU, −56% syscalls (`c_src/`, `lib/instantgrep/native.ex`, `index.ex`)
+
+Added `extract_trigrams_nif/1` to the existing PCRE2 NIF (`c_src/instantgrep_native.c`).
+
+- **Algorithm**: single-pass open-addressing hash table (linear probing, power-of-2 capacity, 50% max load factor) over the raw byte array. Per-trigram cost is 3 integer reads + 1 hash probe — no heap allocation, no GC pressure.
+- **Key encoding**: trigrams stored as 24-bit integers (`byte0<<16 | byte1<<8 | byte2`). Integer keys are immediate BEAM values — ETS lookup and `phash2` routing require zero binary allocation.
+- **Returns** `[{trigram_int, next_mask, loc_mask}]` — same semantics as `Trigram.extract_with_masks/1` but as a flat list of 3-tuples instead of a map.
+- Declared **non-dirty** (`flags: 0`): average file size on the target codebase is ~26 KB, worst-case NIF execution ~500 µs — well inside the safe non-preemptible window. Using `ERL_NIF_DIRTY_JOB_CPU_BOUND` added ~200 µs dispatcher overhead per file, causing a net regression.
+- `lib/instantgrep/native.ex` exposes `extract_trigrams/1` with a transparent Elixir fallback to `Trigram.extract_with_masks/1` when the NIF is not loaded.
+- **Result on example codebase (1884 files, 50 MB)**: build time `10.83s → 9.47s` (−12% wall clock), CPU `2m8s → 1m29s` (−26%), sys `4.5s → 2.0s` (−56%).
+
+### 8. Integer Trigram Keys in `extract_with_masks` (`trigram.ex`)
+
+- Old: `binary_part(binary, pos, 3)` — allocates a 3-byte heap binary per loop iteration. For a 100 KB file this is ~100K heap allocations + GC.
+- New: `:binary.at/2` (returns an integer, zero allocation). Key = `a * 65536 + b * 256 + c` — a small integer, an immediate BEAM value.
+- `Map.update` on integer keys uses integer comparison instead of binary hash + memcmp.
+- Return type of `extract_with_masks/1` changed from `%{binary => {mask, mask}}` to `%{integer => {mask, mask}}` (format version bumped to 5 to invalidate old on-disk indexes).
+
+### 9. `file_metas` Collection Merged into Extraction Pass (`index.ex`)
+
+- Old: `Stream.run()` on the extraction `Task.async_stream`, then a **separate sequential** `Enum.flat_map` issuing one `File.stat` per file — O(N) sequential syscalls after the parallel phase.
+- New: each extraction worker calls `File.stat` for its own file and returns the stat entry as its result value. The `Enum.flat_map` over the already-parallel stream collects metas at zero extra cost.
+- Eliminates one full sequential sweep of all indexed files after every `build` and `update`.
+
+### 10. Parallel `count_unique_keys` (`index.ex`)
+
+- Old: `Enum.map(&count_unique_keys/1)` — counted each shard's unique trigrams sequentially.
+- New: `Task.async_stream(&count_unique_keys/1, ordered: false, timeout: :infinity)` — all N shards counted concurrently.
+- On a 16-core machine with 16 shards this is a ~5× speedup for the count phase (confirmed: 41ms → 8ms).
+
+### 11. Removed Redundant Per-Directory Sort in Scanner (`scanner.ex`)
+
+- Old: `do_scan` called `Enum.sort()` on the file list returned from every directory recursion, then `do_scan_parallel` sorted the combined list again at the top level. For a tree M levels deep total sort work was O(N log N × M).
+- New: intermediate per-directory sorts removed; a single `Enum.sort()` at the top of `do_scan_parallel` produces the same deterministic file ordering at O(N log N) total cost.
+
+### 12. `save/2` Compression Level 6 → 1 (`index.ex`)
+
+- `:erlang.term_to_binary(data, [:compressed])` uses zlib level 6 by default — good compression ratio but slow to write.
+- Changed to `[{:compressed, 1}]` (zlib fastest) — ~3× faster write speed at ~10–15% larger files on disk.
+
+### 13. `save/2` and `load/1` Timeout: `120_000` → `:infinity` (`index.ex`)
+
+- `Task.await` in `save/2` had a hardcoded 120-second ceiling. For a large codebase (e.g. 195K files), writing `file_metas.dat` after the shard files could hit the limit, leaving `file_metas.dat` absent on disk.
+- `Task.async_stream` in `load/1` had the same 120s limit — caused the reported `** (exit) exited in: Task.Supervised.stream(120000)` crash on `--update` for large codebases.
+- Both changed to `:infinity`.
+
+### 14. Daemon Stale-Index Detection (`daemon.ex`)
+
+- Old: `{:ok, idx} ->` branch always used a loaded index regardless of whether `file_metas` was populated — if `file_metas.dat` was missing (e.g. after the 120s timeout bug), the daemon served the index without ever writing it, making `--update` permanently broken.
+- New: pattern-matches on `file_metas` size: `{:ok, %Index{file_metas: metas} = idx} when map_size(metas) > 0` serves the cached index; a zero-meta index triggers a full rebuild + save.
+
+### 15. Daemon Uses PCRE2-JIT NIF for Search (`daemon.ex`)
+
+- Old: `daemon.ex` used `:re.compile` / `:re.run` (PCRE1, no JIT) for all search requests.
+- New: uses `Native.compile_pattern/2` / `Native.scan_content/2` — routes through the PCRE2-JIT NIF where available, falling back to `:re` automatically.
+
+---
+
+## Index Format Changes (updated)
+
+| Version | Format | Notes |
+|---------|--------|-------|
+| ≤3 | Single `postings.dat` (uncompressed) | Incompatible — triggers automatic rebuild |
+| 4 | `meta.dat` + `files.dat` + `postings_0.dat` … `postings_N.dat` (zlib level 6) | Superseded |
+| **5** | Same layout, integer trigram keys, zlib level 1 | Current |
+
+---
+
+## File Summary (updated)
+
+| File | Change |
+|------|--------|
+| `lib/instantgrep/index.ex` | ETS sharding, `lookup_with_masks`, `binary?`, format v5 save/load, parallel shard I/O, NIF extraction, merged stat pass, parallel count, `:infinity` timeouts, fast compression |
+| `lib/instantgrep/query.ex` | `evaluate_masked/2`, bloom-filter last-byte bug fix |
+| `lib/instantgrep/cli.ex` | `--daemon`, `--stop`, `--time`, auto-daemon fallback, positional arg fix |
+| `lib/instantgrep/scanner.ex` | Parallel root scan, `File.ls` safety, `binary_content?` removal, single top-level sort |
+| `lib/instantgrep/matcher.ex` | `:binary.split` instead of `String.split` |
+| `lib/instantgrep/bench.ex` | Uses `evaluate_masked` + `lookup_with_masks` |
+| `lib/instantgrep/trigram.ex` | Integer trigram keys in `extract_with_masks/1` |
+| `lib/instantgrep/daemon.ex` | Unix socket daemon; PCRE2-JIT NIF search; stale index detection |
+| `lib/instantgrep/native.ex` | **New** — `extract_trigrams/1`, `compile_pattern/2`, `scan_content/2` wrappers with NIF + Elixir fallback |
+| `c_src/instantgrep_native.c` | **New** — PCRE2-JIT NIF + `extract_trigrams_nif` (open-addressing hash table) |
+| `Makefile` | **New** — NIF build rules (`make all` / `make clean`) |
+| `build.sh` | Updated — added `make all` step before `mix compile` to build the PCRE2-JIT NIF |
+| `ig.py` | **New** — Python thin client (zero BEAM startup overhead) |
