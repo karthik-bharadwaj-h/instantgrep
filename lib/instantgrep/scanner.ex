@@ -65,7 +65,7 @@ defmodule Instantgrep.Scanner do
               |> Enum.flat_map(fn entry ->
                 do_scan(Path.join(path, entry), max_size, gitignore_patterns)
               end)
-              |> Enum.sort()
+              # No sort here — do_scan_parallel sorts the full combined list once at the top level.
           end
         end
 

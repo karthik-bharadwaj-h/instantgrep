@@ -27,7 +27,7 @@ defmodule Instantgrep.Daemon do
 
   require Logger
 
-  alias Instantgrep.{Index, Query}
+  alias Instantgrep.{Index, Native, Query}
 
   @sock_name "daemon.sock"
   @pid_name "daemon.pid"
@@ -66,8 +66,14 @@ defmodule Instantgrep.Daemon do
 
     index =
       case Index.load(base_dir) do
-        {:ok, idx} ->
+        {:ok, %Index{file_metas: metas} = idx} when map_size(metas) > 0 ->
           IO.puts(:stderr, "Index loaded from disk.")
+          idx
+
+        {:ok, _} ->
+          IO.puts(:stderr, "Index found but missing file metadata — rebuilding...")
+          idx = Index.build(base_dir)
+          Index.save(idx, base_dir)
           idx
 
         {:error, :not_found} ->
@@ -201,9 +207,9 @@ defmodule Instantgrep.Daemon do
   defp run_search(socket, index, content_cache, pattern, ignore_case) do
     t0 = System.monotonic_time(:millisecond)
 
-    re_opts = if ignore_case, do: [:caseless], else: []
+    re_opts_flags = if ignore_case, do: 1, else: 0
 
-    case :re.compile(pattern, re_opts) do
+    case Native.compile_pattern(pattern, re_opts_flags) do
       {:error, {msg, _}} ->
         send_line(socket, "\\ERROR\tinvalid regex: #{msg}")
 
@@ -361,10 +367,9 @@ defmodule Instantgrep.Daemon do
   # PCRE path for patterns that contain regex metacharacters.
   # Uses pre-computed newline index (no rebuild cost per search).
   defp match_content_fast(content, path, compiled_re, newlines) do
-    case :re.run(content, compiled_re, [:global, capture: :first]) do
-      # :re.run returns [[{offset, len}]] (each match is a list of captures)
-      {:match, all_matches} -> extract_lines(Enum.map(all_matches, &hd/1), content, path, newlines)
-      :nomatch -> []
+    case Native.scan_content(compiled_re, content) do
+      [] -> []
+      positions -> extract_lines(positions, content, path, newlines)
     end
   end
 

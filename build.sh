@@ -5,6 +5,9 @@ set -e
 echo "==> Fetching dependencies..."
 mix deps.get
 
+echo "==> Building PCRE2-JIT NIF..."
+make all
+
 echo "==> Compiling..."
 mix compile
 

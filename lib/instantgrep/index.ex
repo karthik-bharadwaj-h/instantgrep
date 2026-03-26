@@ -7,7 +7,7 @@ defmodule Instantgrep.Index do
   The index can be saved to and loaded from a `.instantgrep/` directory.
   """
 
-  alias Instantgrep.{Scanner, Trigram}
+  alias Instantgrep.{Native, Scanner}
 
   @type t :: %__MODULE__{
           postings_tables: tuple(),
@@ -24,9 +24,13 @@ defmodule Instantgrep.Index do
   @index_dir ".instantgrep"
   @files_file "files.dat"
   @file_metas_file "file_metas.dat"
-  @format_version 4
+  @format_version 5
 
   defp shard_file(i), do: "postings_#{i}.dat"
+
+  # Encode a 3-byte trigram binary as a 24-bit integer.
+  # Integer keys are immediate BEAM values — no heap allocation on lookup.
+  defp trigram_to_int(<<a, b, c>>), do: a * 65536 + b * 256 + c
 
   @doc """
   Build a trigram index from a directory path.
@@ -57,54 +61,60 @@ defmodule Instantgrep.Index do
 
     # Parallel trigram extraction — each worker splits its rows across shards
     # by trigram hash (batch-insert per shard), reducing lock contention by num_shards.
-    files
-    |> Task.async_stream(
-      fn {file_id, file_path} ->
-        case File.read(file_path) do
-          {:ok, content} ->
-            sample = binary_part(content, 0, min(512, byte_size(content)))
-
-            unless binary?(sample) do
-              content
-              |> Trigram.extract_with_masks()
-              |> Enum.group_by(
-                fn {trigram, _} -> rem(:erlang.phash2(trigram), num_shards) end,
-                fn {trigram, {next_mask, loc_mask}} -> {trigram, file_id, next_mask, loc_mask} end
-              )
-              |> Enum.each(fn {shard, rows} ->
-                :ets.insert(elem(postings_tables, shard), rows)
-              end)
+    # Extraction workers return a stat entry alongside writing into ETS,
+    # folding the file_metas collection into the same parallel pass.
+    file_metas =
+      files
+      |> Task.async_stream(
+        fn {file_id, file_path} ->
+          stat_entry =
+            case File.stat(file_path, time: :posix) do
+              {:ok, %{mtime: mtime, size: size}} -> {file_path, {file_id, mtime, size}}
+              _ -> nil
             end
 
-          {:error, _} ->
-            :ok
-        end
-      end,
-      max_concurrency: num_shards * 2,
-      ordered: false,
-      timeout: :infinity
-    )
-    |> Stream.run()
+          case File.read(file_path) do
+            {:ok, content} ->
+              sample = binary_part(content, 0, min(512, byte_size(content)))
+
+              unless binary?(sample) do
+                content
+                |> Native.extract_trigrams()
+                |> Enum.group_by(
+                  fn {trigram, _nm, _lm} -> rem(:erlang.phash2(trigram), num_shards) end,
+                  fn {trigram, nm, lm} -> {trigram, file_id, nm, lm} end
+                )
+                |> Enum.each(fn {shard, rows} ->
+                  :ets.insert(elem(postings_tables, shard), rows)
+                end)
+              end
+
+            {:error, _} ->
+              :ok
+          end
+
+          stat_entry
+        end,
+        max_concurrency: num_shards * 2,
+        ordered: false,
+        timeout: :infinity
+      )
+      |> Enum.flat_map(fn
+        {:ok, nil} -> []
+        {:ok, entry} -> [entry]
+        _ -> []
+      end)
+      |> Map.new()
 
     elapsed = System.monotonic_time(:microsecond) - start_time
 
-    # Count unique trigrams: first/next on :bag iterates unique keys, not objects
+    # Count unique trigrams in parallel — one task per shard
     trigram_count =
       postings_tables
       |> Tuple.to_list()
-      |> Enum.map(&count_unique_keys/1)
+      |> Task.async_stream(&count_unique_keys/1, ordered: false, timeout: :infinity)
+      |> Enum.map(fn {:ok, n} -> n end)
       |> Enum.sum()
-
-    # Collect per-file mtime+size for incremental update support
-    file_metas =
-      files
-      |> Enum.flat_map(fn {id, file_path} ->
-        case File.stat(file_path, time: :posix) do
-          {:ok, %{mtime: mtime, size: size}} -> [{file_path, {id, mtime, size}}]
-          _ -> []
-        end
-      end)
-      |> Map.new()
 
     %__MODULE__{
       postings_tables: postings_tables,
@@ -210,10 +220,10 @@ defmodule Instantgrep.Index do
                   sample = binary_part(content, 0, min(512, byte_size(content)))
                   unless binary?(sample) do
                     content
-                    |> Trigram.extract_with_masks()
+                    |> Native.extract_trigrams()
                     |> Enum.group_by(
-                      fn {trigram, _} -> rem(:erlang.phash2(trigram), num_shards) end,
-                      fn {trigram, {next_mask, loc_mask}} -> {trigram, file_id, next_mask, loc_mask} end
+                      fn {trigram, _nm, _lm} -> rem(:erlang.phash2(trigram), num_shards) end,
+                      fn {trigram, nm, lm} -> {trigram, file_id, nm, lm} end
                     )
                     |> Enum.each(fn {shard, rows} ->
                       :ets.insert(elem(postings_tables, shard), rows)
@@ -249,7 +259,8 @@ defmodule Instantgrep.Index do
           trigram_count =
             index.postings_tables
             |> Tuple.to_list()
-            |> Enum.map(&count_unique_keys/1)
+            |> Task.async_stream(&count_unique_keys/1, ordered: false, timeout: :infinity)
+            |> Enum.map(fn {:ok, n} -> n end)
             |> Enum.sum()
 
           elapsed = System.monotonic_time(:microsecond) - start_time
@@ -273,10 +284,11 @@ defmodule Instantgrep.Index do
   """
   @spec lookup(t(), binary()) :: MapSet.t(non_neg_integer())
   def lookup(%__MODULE__{postings_tables: tables, num_shards: n}, trigram) do
+    key = trigram_to_int(trigram)
     tables
-    |> elem(rem(:erlang.phash2(trigram), n))
-    |> :ets.lookup(trigram)
-    |> MapSet.new(fn {_trigram, file_id, _next_mask, _loc_mask} -> file_id end)
+    |> elem(rem(:erlang.phash2(key), n))
+    |> :ets.lookup(key)
+    |> MapSet.new(fn {_key, file_id, _next_mask, _loc_mask} -> file_id end)
   end
 
   @doc """
@@ -288,10 +300,11 @@ defmodule Instantgrep.Index do
   @spec lookup_with_masks(t(), binary()) ::
           %{non_neg_integer() => {non_neg_integer(), non_neg_integer()}}
   def lookup_with_masks(%__MODULE__{postings_tables: tables, num_shards: n}, trigram) do
+    key = trigram_to_int(trigram)
     tables
-    |> elem(rem(:erlang.phash2(trigram), n))
-    |> :ets.lookup(trigram)
-    |> Map.new(fn {_trigram, file_id, next_mask, loc_mask} -> {file_id, {next_mask, loc_mask}} end)
+    |> elem(rem(:erlang.phash2(key), n))
+    |> :ets.lookup(key)
+    |> Map.new(fn {_key, file_id, next_mask, loc_mask} -> {file_id, {next_mask, loc_mask}} end)
   end
 
   @doc """
@@ -341,14 +354,16 @@ defmodule Instantgrep.Index do
     }
 
     # Write meta + files table (+ file_metas if present)
+    # Use compression level 1 (fastest) — reduces write time by ~3x vs default
+    # level 6 at only ~10-15% larger files.
     t_meta =
       Task.async(fn ->
         File.write!(Path.join(dir, "meta.dat"), :erlang.term_to_binary(meta))
         File.write!(Path.join(dir, @files_file),
-          :erlang.term_to_binary(:ets.tab2list(ft), [:compressed]))
+          :erlang.term_to_binary(:ets.tab2list(ft), [{:compressed, 1}]))
         if map_size(index.file_metas) > 0 do
           File.write!(Path.join(dir, @file_metas_file),
-            :erlang.term_to_binary(index.file_metas, [:compressed]))
+            :erlang.term_to_binary(index.file_metas, [{:compressed, 1}]))
         end
       end)
 
@@ -361,12 +376,12 @@ defmodule Instantgrep.Index do
         Task.async(fn ->
           File.write!(
             Path.join(dir, shard_file(i)),
-            :erlang.term_to_binary(:ets.tab2list(table), [:compressed])
+            :erlang.term_to_binary(:ets.tab2list(table), [{:compressed, 1}])
           )
         end)
       end)
 
-    [t_meta | shard_tasks] |> Enum.each(&Task.await(&1, 120_000))
+    [t_meta | shard_tasks] |> Enum.each(&Task.await(&1, :infinity))
     :ok
   end
 
@@ -402,7 +417,7 @@ defmodule Instantgrep.Index do
               end,
               max_concurrency: num_shards,
               ordered: false,
-              timeout: 120_000
+              timeout: :infinity
             )
             |> Stream.run()
 
